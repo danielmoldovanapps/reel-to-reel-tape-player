@@ -1,0 +1,18 @@
+{
+  "version": "1.3.0",
+  "source": "Reel-to-Reel-Tape-Player-1.3.0-smooth-braking-source.zip plus tested LED clipping and current Snap runtime fixes",
+  "application_sha256": {
+    "reelplayer": "c8df8616fba1413394e584454ca27f7e717d7d9c07701ca2fc2fc0f4aea9ff1e",
+    "index.html": "817549b4e41027b13be67ade6a7580d255cbc8e25502be56fd3d7e6e59bb0273",
+    "tape-engine.js": "4e6edb621fd8dbfe2354eec89fa0cbae3779c5d766d16fd982fe8db0bddf66c8",
+    "artwork.py": "b718ccc45ba2ba79abc2d053c9968fc1107ef4ee5375a8c1c6f56b9e1ccfed1d",
+    "streaminfo.py": "8e9218cec9df53f003142391ade6a5c608cb7c106b84ab8bca7a05941730f908",
+    "metadata-reader.js": "ba23fde6771a36d9d0ffd62c2f6961f79486115e37e73c5d7733f0353f188bf4"
+  },
+  "notes": [
+    "Application source matches the tested 1.3.0 desktop/LED-fix release.",
+    "Snap recipe carries core24 Python, librsvg exclusion, proxy workaround and BLAS/LAPACK fixes. Source layout changed to repository root.",
+    "No Flatpak manifest is included. Flathub packaging must be independently human-written under current policy.",
+    "GitHub repository has not yet been created; repository protections are not configured by these files."
+  ]
+}

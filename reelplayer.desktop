@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Reel-to-Reel Tape Player
+Comment=Vintage reel-to-reel music player for local and network audio
+Exec=reelplayer %F
+TryExec=reelplayer
+Icon=reelplayer
+StartupWMClass=org.reelplayer.ReelPlayer
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+MimeType=audio/mpeg;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/wav;audio/x-wav;audio/mp4;audio/aac;audio/webm;

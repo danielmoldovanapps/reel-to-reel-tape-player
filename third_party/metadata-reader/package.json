@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "music-metadata": "^12.1.1"
+  }
+}

@@ -1,0 +1,13 @@
+Third-party components retain their own licenses and copyrights.
+
+Mutagen 1.47.0: GPL-2.0-or-later. See vendor/mutagen and
+vendor/mutagen-1.47.0.dist-info/COPYING.
+Upstream: https://github.com/quodlibet/mutagen
+
+music-metadata JavaScript parser and dependencies: see metadata-reader-LICENSES.txt,
+third_party/metadata-reader, and metadata-reader.js.map.
+Upstream: https://github.com/Borewit/music-metadata
+
+GTK 3, WebKit2GTK 4.1, GStreamer, Python and GLib/GIO are system/runtime
+libraries subject to their own licenses. No Chromium binary is bundled.
+The app's GPL license does not replace the component libraries' licenses.

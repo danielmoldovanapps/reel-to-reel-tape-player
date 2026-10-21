@@ -1,0 +1,603 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (C) 2026 Daniel Moldovan aka [RO]Daniel
+# Contact: rodanielapps@yahoo.com
+"""Reel-to-Reel Tape Player — GTK3/WebKit2GTK native shell.
+
+One GTK application instance per desktop session. Files opened by the file manager
+are delivered to that instance and played automatically. Browser not required.
+"""
+import os, sys, json, secrets, shutil, subprocess, threading, time, mimetypes, urllib.parse, re, io, wave
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+from artwork import get_artwork
+from streaminfo import get_track_info
+
+ICON_SVG = open(os.path.join(HERE, 'icon.svg')).read() if os.path.exists(os.path.join(HERE, 'icon.svg')) else ''
+EXTS = {'.mp3','.flac','.ogg','.oga','.opus','.wav','.m4a','.aac','.weba'}
+TOKEN = secrets.token_urlsafe(16)
+FILES, ROOTS = [], []
+state = {'ping': 0.0, 'bye': 0.0, 'start': time.time()}
+FILE_LOCK = threading.RLock()
+PENDING_OPEN_EVENTS = []
+# One-time authorization for starting a file-manager-selected track in a
+# native WebKitGTK JavaScript invocation (with a user activation context).
+NATIVE_PLAY_READY = set()
+NATIVE_PLAY_DISPATCH = None
+
+# A fixed allowlisted external destination; never accept an arbitrary URL from
+# HTTP requests. The authentication token is randomized per player launch.
+PAYPAL_DONATION_URL = 'https://www.paypal.me/danielmoldovanapps'
+
+def open_donation_browser():
+    """Open the selected donation site in the OS default browser, not WebKit."""
+    # GIO uses the host URI handler (via desktop portals for Flatpak apps).
+    try:
+        import gi
+        from gi.repository import Gio
+        if Gio.AppInfo.launch_default_for_uri(PAYPAL_DONATION_URL, None):
+            return True
+    except Exception:
+        pass
+    opener = shutil.which('xdg-open')
+    if opener:
+        try:
+            subprocess.Popen([opener, PAYPAL_DONATION_URL],
+                             stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL,start_new_session=True)
+            return True
+        except OSError:
+            pass
+    return False
+
+def scan(paths):
+    for p in paths:
+        p = os.path.abspath(os.path.expanduser(p))
+        if os.path.isfile(p) and os.path.splitext(p)[1].lower() in EXTS:
+            FILES.append((os.path.dirname(p), p)); continue
+        for d, _, fs in os.walk(p):
+            for f in fs:
+                if os.path.splitext(f)[1].lower() in EXTS: FILES.append((p, os.path.join(d, f)))
+    import re
+    nat = lambda t: [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)', t[1])]
+    FILES.sort(key=nat)
+
+def pick_folder():
+    """Open a native desktop folder dialog; no browser file-upload flow."""
+    zenity = shutil.which('zenity')
+    if zenity:
+        p = subprocess.run([zenity, '--file-selection', '--directory', '--title=Choose music folder'],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        return p.stdout.strip() if p.returncode == 0 else ''
+    kdialog = shutil.which('kdialog')
+    if kdialog:
+        p = subprocess.run([kdialog, '--getexistingdirectory', os.path.expanduser('~/Music'), '--title', 'Choose music folder'],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        return p.stdout.strip() if p.returncode == 0 else ''
+    # Tk is commonly available on desktop Python installs; keep it as a fallback.
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
+        path = filedialog.askdirectory(title='Choose music folder', initialdir=os.path.expanduser('~/Music'))
+        root.destroy()
+        return path or ''
+    except Exception:
+        return ''
+
+def scan_added(root):
+    root = os.path.abspath(os.path.expanduser(root))
+    found = []
+    for d, _, names in os.walk(root):
+        for name in names:
+            if os.path.splitext(name)[1].lower() in EXTS:
+                found.append((root, os.path.join(d, name)))
+    def nat(item):
+        return [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)', item[1])]
+    found.sort(key=nat)
+    start = len(FILES)
+    FILES.extend(found)
+    if root not in ROOTS: ROOTS.append(root)
+    return [{'id': i, 'name': os.path.basename(path), 'rel': os.path.relpath(path, root).replace(os.sep, '/'), 'size': os.path.getsize(path)}
+            for i, (_, path) in enumerate(FILES[start:], start)]
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+    def log_message(self, *a): pass
+    def _send(self, code, body=b'', ctype='text/plain', extra=None):
+        self.send_response(code); self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(body)))
+        for k, v in (extra or {}).items(): self.send_header(k, v)
+        self.end_headers(); self.wfile.write(body)
+    def do_GET(self):
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
+        if u.path == '/manifest.webmanifest':
+            manifest = {'name':'Reel-to-Reel Tape Player','short_name':'Reel-to-Reel','display':'standalone','start_url':'/',
+                        'icons':[{'src':'/icon.svg','sizes':'any','type':'image/svg+xml','purpose':'any'}]}
+            return self._send(200, json.dumps(manifest).encode(), 'application/manifest+json')
+        if u.path == '/icon.svg':
+            return self._send(200, ICON_SVG.encode(), 'image/svg+xml')
+        if u.path == '/metadata-reader.js':
+            return self._send(200, open(os.path.join(HERE, 'metadata-reader.js'), 'rb').read(), 'application/javascript; charset=utf-8')
+        if u.path == '/tape-engine.js':
+            return self._send(200, open(os.path.join(HERE, 'tape-engine.js'), 'rb').read(), 'application/javascript; charset=utf-8')
+        if q.get('k', [''])[0] != TOKEN: return self._send(403, b'forbidden')
+        if u.path in ('/', '/index.html'):
+            return self._send(200, open(os.path.join(HERE, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
+        if u.path.startswith('/info/'):
+            try:
+                idx = int(u.path[6:])
+                if idx < 0: raise IndexError
+                path = FILES[idx][1]
+            except (ValueError, IndexError): return self._send(404)
+            return self._send(200, json.dumps(get_track_info(path)).encode(), 'application/json')
+        if u.path == '/api/prefs':
+            return self._send(200, json.dumps(read_preferences()).encode(), 'application/json',
+                              {'Cache-Control':'no-store'})
+        if u.path == '/api/branding':
+            return self._send(200, json.dumps(read_branding()).encode(), 'application/json')
+        if u.path == '/api/license-status':
+            return self._send(200, json.dumps({'seen': legal_notice_seen()}).encode(), 'application/json')
+        if u.path == '/api/ping': state['ping'] = time.time(); return self._send(204)
+        if u.path == '/api/bye': state['bye'] = time.time(); return self._send(204)
+        if u.path == '/api/open-events':
+            with FILE_LOCK:
+                events = PENDING_OPEN_EVENTS[:]
+                PENDING_OPEN_EVENTS.clear()
+                # Only a real desktop Open-With event may request activation.
+                for event in events:
+                    if isinstance(event.get('play'), int):
+                        NATIVE_PLAY_READY.add(event['play'])
+            return self._send(200, json.dumps(events).encode(), 'application/json',
+                              {'Cache-Control': 'no-store'})
+        if u.path == '/api/library':
+            with FILE_LOCK:
+                tr = [{'id': i, 'name': os.path.basename(p), 'rel': os.path.relpath(p, root).replace(os.sep, '/'), 'size': os.path.getsize(p)} for i, (root, p) in enumerate(FILES)]
+            return self._send(200, json.dumps({'root': ', '.join(os.path.basename(r) or r for r in ROOTS), 'tracks': tr}).encode(), 'application/json')
+        if u.path == '/api/pick-folder':
+            folder = pick_folder()
+            if not folder:
+                return self._send(200, json.dumps({'tracks': []}).encode(), 'application/json')
+            added = scan_added(folder)
+            return self._send(200, json.dumps({'root': ', '.join(os.path.basename(r) or r for r in ROOTS), 'tracks': added}).encode(), 'application/json')
+        if u.path.startswith('/art/'):
+            try:
+                idx = int(u.path[5:])
+                if idx < 0: raise IndexError
+                path = FILES[idx][1]
+            except (ValueError, IndexError): return self._send(404)
+            art = get_artwork(path)
+            if not art: return self._send(404)
+            return self._send(200, art[0], art[1], {'Cache-Control': 'private, max-age=3600'})
+        if u.path.startswith('/preview/'):
+            # Fast-start PCM preview. Decode only the opening minute rather than
+            # waiting for a whole hour-long mix. The normal audio engine still
+            # decodes the full track in parallel for full seeking and rewind.
+            try:
+                idx=int(u.path[len('/preview/'):])
+                if idx<0: raise IndexError
+                path=FILES[idx][1]
+            except (ValueError, IndexError): return self._send(404)
+            if not shutil.which('ffmpeg'):
+                return self._send(503, b'ffmpeg is required for fast-start previews')
+            try:
+                # WAV headers need a real data length, so capture a bounded
+                # 60-second PCM fragment before sending it to Web Audio.
+                cmd=['ffmpeg','-nostdin','-hide_banner','-loglevel','error',
+                     '-i',path,'-t','60','-map','0:a:0','-vn',
+                     '-ac','2','-ar','44100','-f','s16le','pipe:1']
+                pcm=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                   timeout=20,check=True).stdout
+                if not pcm: raise ValueError('No audio data')
+                wav_io=io.BytesIO()
+                with wave.open(wav_io,'wb') as w:
+                    w.setnchannels(2);w.setsampwidth(2);w.setframerate(44100)
+                    w.writeframes(pcm)
+                # ffprobe reads container metadata only, not the whole song.
+                duration=0.0
+                if shutil.which('ffprobe'):
+                    result=subprocess.run(['ffprobe','-v','error',
+                        '-show_entries','format=duration','-of','default=nw=1:nk=1',path],
+                        stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+                        text=True,timeout=5)
+                    try: duration=float(result.stdout.strip())
+                    except ValueError: pass
+                return self._send(200,wav_io.getvalue(),'audio/wav',
+                                  {'X-Reel-Duration':str(duration),'Cache-Control':'no-store'})
+            except (subprocess.SubprocessError, OSError, ValueError) as e:
+                return self._send(503, str(e).encode('utf-8','replace')[:250])
+        if u.path.startswith('/file/'):
+            try: path = FILES[int(u.path[6:])][1]
+            except Exception: return self._send(404)
+            size = os.path.getsize(path); start, end = 0, size - 1; code = 200
+            r = self.headers.get('Range')
+            if r and r.startswith('bytes='):
+                a, _, b = r[6:].partition('-')
+                start = int(a) if a else max(0, size - int(b)); end = min(int(b), size - 1) if a and b else size - 1; code = 206
+            ctype = mimetypes.guess_type(path)[0] or 'application/octet-stream'
+            self.send_response(code); self.send_header('Content-Type', ctype); self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Content-Length', str(end - start + 1))
+            if code == 206: self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+            self.end_headers()
+            try:
+                with open(path, 'rb') as f:
+                    f.seek(start); left = end - start + 1
+                    while left > 0:
+                        chunk = f.read(min(65536, left))
+                        if not chunk: break
+                        self.wfile.write(chunk); left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError): pass
+            return
+        self._send(404)
+    def do_POST(self):
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
+        if q.get('k', [''])[0] != TOKEN: return self._send(403, b'forbidden')
+        if u.path == '/api/native-play':
+            # This request is sent only AFTER the page has loaded a desktop
+            # Open-With event into its library. Execute playback from GTK's
+            # native JavaScript API so WebKit can activate Web Audio, without
+            # switching to a different (pitch-changing) playback engine.
+            if self.headers.get('Origin', '').strip() not in ('',
+                    'http://127.0.0.1:%s' % self.server.server_port):
+                return self._send(403, b'Invalid origin')
+            try:
+                track_id=int(q.get('id', [''])[0])
+            except ValueError:
+                return self._send(400, b'Invalid track')
+            with FILE_LOCK:
+                if track_id not in NATIVE_PLAY_READY:
+                    return self._send(409, b'No pending file-manager open')
+                NATIVE_PLAY_READY.remove(track_id)
+            if NATIVE_PLAY_DISPATCH is None or not NATIVE_PLAY_DISPATCH(track_id):
+                return self._send(503, b'Native WebKit bridge unavailable')
+            return self._send(204)
+        if u.path == '/api/open-donation':
+            # POST + per-process secret prevents a random website from opening
+            # donation pages through this localhost-only server.
+            if self.headers.get('Origin', '').strip() not in ('',
+                    'http://127.0.0.1:%s' % self.server.server_port):
+                return self._send(403,b'Invalid origin')
+            if not open_donation_browser():
+                return self._send(503,b'No external browser available')
+            return self._send(204)
+        if u.path == '/api/playlist':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<0 or length>1048576: return self._send(413)
+                data=json.loads(self.rfile.read(length))
+                if not isinstance(data,list): return self._send(400)
+                # Only accept paths of files already opened by this local application.
+                known={path for _,path in FILES}
+                chosen=[]
+                for i in data:
+                    if not isinstance(i,int) or i<0 or i>=len(FILES): return self._send(400)
+                    chosen.append(FILES[i][1])
+                write_playlist(chosen)
+            except (OSError,ValueError,TypeError): return self._send(400,b'Playlist save failed')
+            return self._send(204)
+        if u.path == '/api/prefs':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<=0 or length>4096: return self._send(413)
+                incoming=json.loads(self.rfile.read(length))
+                write_preferences(incoming)
+            except (OSError, ValueError, TypeError, AttributeError):
+                return self._send(400,b'Could not save preferences')
+            return self._send(204)
+        if u.path == '/api/branding':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length < 0 or length > 4096: return self._send(413)
+                data=json.loads(self.rfile.read(length))
+                if not isinstance(data,dict): return self._send(400)
+                write_branding(data)
+            except (OSError, ValueError, TypeError):
+                return self._send(400,b'Could not save branding')
+            return self._send(204)
+        if u.path != '/api/license-seen': return self._send(404)
+        try: mark_legal_notice_seen()
+        except OSError: return self._send(500, b'Could not save license notice preference')
+        return self._send(204)
+
+    do_HEAD = do_GET
+
+def install():
+    home = os.path.expanduser('~'); me = os.environ.get('APPIMAGE') or (os.path.join(HERE, 'AppRun') if os.path.isfile(os.path.join(HERE, 'AppRun')) else os.path.realpath(__file__))
+    icon_dir = f'{home}/.local/share/icons/hicolor/scalable/apps'; os.makedirs(icon_dir, exist_ok=True)
+    open(f'{icon_dir}/reelplayer.svg', 'w').write(ICON_SVG)
+    app = f'{home}/.local/share/applications'; os.makedirs(app, exist_ok=True)
+    desktop_entry = (f'[Desktop Entry]\nType=Application\nName=Reel-to-Reel Tape Player — [RO]Daniel\n'
+                     f'Comment=Vintage reel-to-reel music player for local and network audio\nExec="{me}" %F\nTryExec={me}\n'
+                     'Icon=reelplayer\nStartupWMClass=reelplayer\nCategories=AudioVideo;Audio;Player;\n'
+                     'Terminal=false\nMimeType=audio/mpeg;audio/flac;audio/ogg;audio/opus;'
+                     'audio/wav;audio/x-wav;audio/mp4;audio/aac;audio/webm;\n')
+    open(f'{app}/reelplayer.desktop', 'w').write(desktop_entry)
+    updater = shutil.which('update-desktop-database')
+    if updater:
+        subprocess.run([updater, '-q', app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print('Installed menu entry and audio-file association: ReelPlayer')
+
+LEGAL_NOTICE_ID = 'GPL-3.0-only-Daniel-Moldovan-2026'
+
+def preferences_file():
+    return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')),
+                        'reelplayer', 'prefs.json')
+
+def sanitize_preferences(data):
+    # A malformed or outdated preference file must never prevent launch.
+    if not isinstance(data, dict):
+        raise ValueError('Invalid preferences')
+    vol = data.get('vol', 1)
+    if type(vol) not in (float, int) or not 0 <= vol <= 1:
+        raise ValueError('Invalid volume')
+    repeat = data.get('repeat', 0)
+    if type(repeat) is not int or not 0 <= repeat <= 2:
+        raise ValueError('Invalid repeat setting')
+    shuffle = data.get('shuffle', False)
+    if type(shuffle) is not bool:
+        raise ValueError('Invalid shuffle setting')
+    return {'vol': float(vol), 'repeat': repeat, 'shuffle': shuffle}
+
+def read_preferences():
+    try:
+        with open(preferences_file(), encoding='utf-8') as f:
+            return sanitize_preferences(json.load(f))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {'vol': 1.0, 'repeat': 0, 'shuffle': False}
+
+def write_preferences(data):
+    values = sanitize_preferences(data)
+    dest = preferences_file()
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp = dest + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(values, f)
+    os.replace(tmp, dest)
+
+def branding_file():
+    return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'reelplayer', 'branding.json')
+
+def read_branding():
+    try:
+        with open(branding_file(), encoding='utf-8') as f: data=json.load(f)
+        return {'reels': str(data.get('reels',''))[:24], 'deck': str(data.get('deck',''))[:30]}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {'reels':'', 'deck':''}
+
+def write_branding(data):
+    values={'reels':str(data.get('reels',''))[:24], 'deck':str(data.get('deck',''))[:30]}
+    path=branding_file(); os.makedirs(os.path.dirname(path),exist_ok=True)
+    tmp=path+'.tmp'
+    with open(tmp,'w',encoding='utf-8') as f: json.dump(values,f,ensure_ascii=False)
+    os.replace(tmp,path)
+
+def playlist_file():
+    return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')),
+                        'reelplayer', 'playlist.json')
+
+def read_playlist():
+    try:
+        with open(playlist_file(), encoding='utf-8') as f: data=json.load(f)
+        if isinstance(data, list):
+            return [p for p in data[:20000] if isinstance(p,str) and os.path.isabs(p)]
+    except (OSError, ValueError, TypeError): pass
+    return []
+
+def write_playlist(paths):
+    if not isinstance(paths,list) or len(paths)>20000: raise ValueError('Invalid playlist')
+    values=[]
+    for path in paths:
+        if not isinstance(path,str) or not os.path.isabs(path) or len(path)>4096:
+            raise ValueError('Invalid path')
+        values.append(path)
+    dest=playlist_file(); os.makedirs(os.path.dirname(dest),exist_ok=True)
+    tmp=dest+'.tmp'
+    with open(tmp,'w',encoding='utf-8') as f: json.dump(values,f,ensure_ascii=False)
+    os.replace(tmp,dest)
+
+def track_json():
+    return [{'id':i,'name':os.path.basename(path), 'rel':os.path.basename(path),'size':os.path.getsize(path)}
+            for i,(_,path) in enumerate(FILES)]
+
+def legal_notice_file():
+    config = os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
+    return os.path.join(config, 'reelplayer', 'license-notice.json')
+
+def legal_notice_seen():
+    try:
+        with open(legal_notice_file()) as f: return json.load(f).get('notice') == LEGAL_NOTICE_ID
+    except (OSError, ValueError): return False
+
+def mark_legal_notice_seen():
+    path = legal_notice_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w') as f: json.dump({'notice': LEGAL_NOTICE_ID}, f)
+
+def show_launch_error(message):
+    print(message, file=sys.stderr)
+    try:
+        if shutil.which('zenity'):
+            subprocess.run(['zenity', '--error', '--title=ReelPlayer', '--text='+message], check=False)
+        elif shutil.which('kdialog'):
+            subprocess.run(['kdialog', '--error', message, '--title', 'ReelPlayer'], check=False)
+        else:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk(); root.withdraw()
+            messagebox.showerror('ReelPlayer', message, parent=root)
+            root.destroy()
+    except Exception:
+        pass
+
+def add_external_paths(paths):
+    """Append files or a folder to the current library, keeping existing IDs stable.
+
+    Return a browser event that plays the first selected file, even if already
+    present. A duplicate open never creates another library entry or window.
+    """
+    found = []
+    with FILE_LOCK:
+        existing = {path: index for index, (_, path) in enumerate(FILES)}
+        for item in paths:
+            path = os.path.realpath(os.path.expanduser(item))
+            if os.path.isfile(path):
+                if os.path.splitext(path)[1].lower() in EXTS:
+                    found.append((os.path.dirname(path), path))
+            elif os.path.isdir(path):
+                for folder, _, names in os.walk(path):
+                    for name in names:
+                        f = os.path.join(folder, name)
+                        if os.path.splitext(f)[1].lower() in EXTS:
+                            found.append((path, f))
+        found.sort(key=lambda item: [int(x) if x.isdigit() else x.lower()
+                                    for x in re.split(r'(\d+)', item[1])])
+        additions = []
+        selected = []
+        for root, path in found:
+            if path not in existing:
+                index = len(FILES)
+                FILES.append((root, path))
+                existing[path] = index
+                additions.append({'id': index, 'name': os.path.basename(path),
+                                  'rel': os.path.relpath(path, root).replace(os.sep, '/'), 'size': os.path.getsize(path)})
+            selected.append(existing[path])
+            if root not in ROOTS: ROOTS.append(root)
+        if selected:
+            event = {'tracks': additions, 'play': selected[0]}
+            PENDING_OPEN_EVENTS.append(event)
+            return event
+    return None
+
+
+def initial_library():
+    """Restore playlist or use ~/Music without starting playback on icon launch."""
+    with FILE_LOCK:
+        if os.path.isfile(playlist_file()):
+            for path in read_playlist():
+                if os.path.isfile(path) and os.path.splitext(path)[1].lower() in EXTS:
+                    FILES.append((os.path.dirname(path), path))
+        else:
+            music = os.path.expanduser('~/Music')
+            if os.path.isdir(music):
+                ROOTS.append(music)
+                scan([music])
+
+
+def main():
+    args = sys.argv[1:]
+    if '--license' in args:
+        print(open(os.path.join(HERE, 'COPYRIGHT')).read())
+        print(open(os.path.join(HERE, 'LICENSE')).read())
+        return 0
+    if '--install' in args:
+        install()
+        return 0
+    try:
+        import gi
+        gi.require_version('Gtk', '3.0')
+        gi.require_version('WebKit2', '4.1')
+        from gi.repository import Gtk, Gio, GLib, Gdk, WebKit2
+    except (ImportError, ValueError) as error:
+        show_launch_error('WebKitGTK dependencies are missing. Install python3-gi, '
+                          'gir1.2-gtk-3.0 and gir1.2-webkit2-4.1.\n' + str(error))
+        return 1
+
+    class ReelApplication(Gtk.Application):
+        def __init__(self):
+            super().__init__(application_id='org.reelplayer.ReelPlayer',
+                             flags=Gio.ApplicationFlags.HANDLES_OPEN)
+            self.window = None
+            self.server = None
+
+        def do_startup(self):
+            Gtk.Application.do_startup(self)
+            global NATIVE_PLAY_DISPATCH
+            NATIVE_PLAY_DISPATCH = self._dispatch_native_play
+            initial_library()
+            self.server = ThreadingHTTPServer(('127.0.0.1', 0), H)
+            self.server.daemon_threads = True
+            threading.Thread(target=self.server.serve_forever, daemon=True).start()
+            self.url = 'http://127.0.0.1:%s/?k=%s' % (self.server.server_port, TOKEN)
+
+        def _dispatch_native_play(self, track_id):
+            if getattr(self, 'webview', None) is None:
+                return False
+            def start_on_gtk_thread():
+                try:
+                    # WebKit2GTK's run_javascript executes host-triggered JS
+                    # with user activation, unlike a fetch/timer callback.
+                    # This lets the ORIGINAL Web Audio transport start on
+                    # the same engine used by the Play button.
+                    self.webview.run_javascript(
+                        'window.reelPlayerStartExternal(%d);' % track_id,
+                        None, None)
+                except Exception as error:
+                    print('Native WebKit playback activation failed:',
+                          error, file=sys.stderr)
+                return False
+            GLib.idle_add(start_on_gtk_thread)
+            return True
+
+        def do_activate(self):
+            if self.window is not None:
+                self.window.present()
+                return
+            self.window = Gtk.ApplicationWindow(application=self)
+            self.window.set_title('Reel-to-Reel Tape Player')
+            self.window.set_default_size(1180, 780)
+            self.window.set_size_request(700, 460)
+            try:
+                self.window.set_icon_from_file(os.path.join(HERE, 'icon.svg'))
+            except GLib.Error:
+                pass
+            config = os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
+            cache = os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
+            data_dir = os.path.join(config, 'reelplayer', 'webkit-data')
+            cache_dir = os.path.join(cache, 'reelplayer', 'webkit-cache')
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(cache_dir, exist_ok=True)
+            manager = WebKit2.WebsiteDataManager(base_data_directory=data_dir,
+                                                  base_cache_directory=cache_dir)
+            context = WebKit2.WebContext.new_with_website_data_manager(manager)
+            self.webview = WebKit2.WebView.new_with_context(context)
+            settings = self.webview.get_settings()
+            settings.set_enable_javascript(True)
+            settings.set_enable_webaudio(True)
+            settings.set_enable_mediasource(True)
+            settings.set_media_playback_requires_user_gesture(False)
+            # File-manager opens must autoplay without requiring a click in WebKit.
+            if hasattr(self.webview, 'set_autoplay_policy'):
+                self.webview.set_autoplay_policy(WebKit2.AutoplayPolicy.ALLOW)
+            self.window.add(self.webview)
+            self.window.show_all()
+            # Open the deck maximized on each launch (not exclusive fullscreen).
+            # The window manager can still restore/unmaximize it normally.
+            self.window.maximize()
+            self.webview.load_uri(self.url)
+
+        def do_open(self, files, n_files, hint):
+            # Gio automatically forwards Open-With launches to this one instance.
+            paths = [f.get_path() for f in files if f.get_path()]
+            if paths:
+                add_external_paths(paths)
+            self.activate()  # presents the already-open deck; does not spawn another
+
+        def do_shutdown(self):
+            if self.server:
+                self.server.shutdown()
+                self.server.server_close()
+            Gtk.Application.do_shutdown(self)
+
+    application = ReelApplication()
+    # Pass original arguments so GApplication handles file opens and D-Bus
+    # forwarding; Gtk.Application is unique unless NON_UNIQUE is requested.
+    return application.run([sys.argv[0]] + args)
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main() or 0)
+    except Exception as error:
+        show_launch_error('Reel-to-Reel Tape Player could not start: ' + str(error))
+        sys.exit(1)

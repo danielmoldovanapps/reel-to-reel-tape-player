@@ -1,0 +1,19 @@
+ReelPlayer
+Copyright (C) 2026 Daniel Moldovan aka [RO]Daniel
+Contact: rodanielapps@yahoo.com
+
+ReelPlayer application source is licensed under GNU GPL version 3 only
+(SPDX-License-Identifier: GPL-3.0-only). See LICENSE for the full text.
+
+This license grant applies to ReelPlayer's own application code, design and
+build scripts to the extent of rights held by its author. Independently
+licensed third-party components retain their original licenses and copyrights.
+Names and trademarks of other products are not claimed as the author's own.
+
+You may run, study, share and modify this application under GPLv3. When
+redistributing it, preserve copyright/license notices and provide corresponding
+source as required by GPLv3. Modified versions must carry appropriate change
+notices. The application is supplied without warranty as described in LICENSE.
+
+Do not treat the presence of this notice as permission to remove other
+components' notices or as a replacement for their distribution conditions.
