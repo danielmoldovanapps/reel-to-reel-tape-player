@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Reel-to-Reel Tape Player
+Comment=Vintage reel-to-reel audio player with animated tape reels
+Exec=reel-to-reel-tape-player.reelplayer %F
+Icon=${SNAP}/meta/gui/reelplayer.svg
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+MimeType=audio/mpeg;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/wav;audio/x-wav;audio/mp4;audio/aac;audio/webm;
+StartupWMClass=org.reelplayer.ReelPlayer

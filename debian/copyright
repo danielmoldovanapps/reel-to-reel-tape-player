@@ -1,0 +1,22 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Reel-to-Reel Tape Player
+Upstream-Contact: Daniel Moldovan aka [RO]Daniel <rodanielapps@yahoo.com>
+Source: supplied accompanying source archive
+
+Files: *
+Copyright: 2026 Daniel Moldovan aka [RO]Daniel
+License: GPL-3.0-only
+ The application is distributed under the terms of GNU GPL version 3 only.
+ See /usr/share/reelplayer/LICENSE and /usr/share/doc/reelplayer/LICENSE.
+
+Files: vendor/mutagen/*
+Copyright: respective Mutagen contributors
+License: GPL-2.0-or-later
+ See vendor/mutagen-1.47.0.dist-info/COPYING.
+
+Files: metadata-reader.js third_party/metadata-reader/*
+Copyright: respective upstream contributors
+License: MIT and/or respective upstream terms
+ See metadata-reader-LICENSES.txt and third_party/metadata-reader.
+
+WebKitGTK, GTK and Python are external OS libraries, not bundled.

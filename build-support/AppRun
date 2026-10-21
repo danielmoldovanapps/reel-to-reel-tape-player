@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+TEMP=$(mktemp -d "${TMPDIR:-/tmp}/reelplayer-appimage.XXXXXXXX")
+trap 'rm -rf -- "$TEMP"' EXIT HUP INT TERM
+tar -xzf "$HERE/payload.tar.gz" -C "$TEMP"
+"$TEMP/app/AppRun" "$@"

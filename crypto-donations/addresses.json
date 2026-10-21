@@ -1,0 +1,17 @@
+[
+  {
+    "symbol": "BTC",
+    "network": "Bitcoin",
+    "address": "bc1quwjuagmljuctff6wmd92r54xdtnzyvkkr39gqu"
+  },
+  {
+    "symbol": "SOL",
+    "network": "Solana",
+    "address": "6H9wLuS9fGj2gf9mUaL8ARqGXTNxv75WW48bpPMMQUdt"
+  },
+  {
+    "symbol": "ETH",
+    "network": "Ethereum",
+    "address": "0x908613808d4B5AC3D4aC857e654209eBd3D4A47E"
+  }
+]
