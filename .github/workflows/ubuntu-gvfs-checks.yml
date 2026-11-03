@@ -1,0 +1,41 @@
+name: Validate Ubuntu GVFS selection compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'reelplayer'
+      - 'index.html'
+      - 'snap/snapcraft.yaml'
+      - 'tests/test_snap_native_chooser.py'
+      - '.github/workflows/ubuntu-gvfs-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'reelplayer'
+      - 'index.html'
+      - 'snap/snapcraft.yaml'
+      - 'tests/test_snap_native_chooser.py'
+      - '.github/workflows/ubuntu-gvfs-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source syntax
+        run: |
+          python3 -m py_compile reelplayer artwork.py streaminfo.py
+          node --check tape-engine.js
+          python3 - <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          for i, script in enumerate(re.findall(r'<script[^>]*>(.*?)</script>', Path('index.html').read_text(), re.S)):
+              target = Path('/tmp/reel-inline-%s.js' % i)
+              target.write_text(script)
+              subprocess.run(['node', '--check', str(target)], check=True)
+          PY
+      - name: Test file portal fallback and 1.3.3 version
+        run: python3 -m unittest discover -s tests -p 'test_snap_native_chooser.py' -v
