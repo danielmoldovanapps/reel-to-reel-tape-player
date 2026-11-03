@@ -27,13 +27,21 @@ class SnapGVFSChooserTests(TestCase):
             music.mkdir()
             with patch.dict(os.environ, {'SNAP': '/snap/reelplayer/current',
                                          'XDG_RUNTIME_DIR': temp}):
-                self.assertEqual(initial(), str(music) + os.sep)
+                self.assertEqual(initial(str(root)), str(music) + os.sep)
 
     def test_missing_mount_falls_back_to_normal_dialog(self):
         with TemporaryDirectory() as temp:
             with patch.dict(os.environ, {'SNAP': '/snap/reelplayer/current',
                                          'XDG_RUNTIME_DIR': temp}):
-                self.assertEqual(initial(), '')
+                self.assertEqual(initial(str(Path(temp) / 'gvfs')), '')
+
+    def test_snap_ignores_private_runtime_directory(self):
+        with patch.dict(os.environ, {'SNAP': '/snap/reelplayer/current',
+                                     'XDG_RUNTIME_DIR': '/run/user/1000/snap.reel-to-reel-tape-player'}), \
+             patch('os.getuid', return_value=1000), \
+             patch('os.listdir', side_effect=PermissionError) as listing:
+            self.assertEqual(initial(), '')
+            listing.assert_called_once_with('/run/user/1000/gvfs')
 
     def test_zenity_receives_selected_folder_as_initial_location(self):
         with patch.dict(os.environ, {'SNAP': '/snap/reelplayer/current'}), \
