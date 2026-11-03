@@ -111,12 +111,141 @@ def snap_pick_folder_native():
     return selected[0]
 
 
+def selected_path_readable(path, folder=False):
+    """Verify real file access, not just a path returned by the portal."""
+    if not path:
+        return False
+    try:
+        if folder:
+            with os.scandir(path) as items:
+                next(items, None)
+        else:
+            with open(path, 'rb') as stream:
+                stream.read(1)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def snap_gvfs_fallback(folder=True):
+    """Offer direct mounted GVFS paths if the desktop portal export is broken.
+
+    Ubuntu Live may expose a selected SMB folder as /run/user/UID/doc/ID/name
+    even though that path doesn't exist inside the Snap. The same SMB share
+    is accessible under /run/user/UID/gvfs/. This in-process GTK chooser
+    starts there and returns the REAL path selected by the user. Never guess
+    a matching directory based only on its basename.
+    """
+    if GTK_NATIVE_API is None:
+        return '' if folder else []
+    gvfs = '/run/user/%d/gvfs' % os.getuid()
+    try:
+        if not os.path.isdir(gvfs) or not os.listdir(gvfs):
+            print('No mounted GVFS shares available for portal fallback', file=sys.stderr)
+            return '' if folder else []
+    except OSError as error:
+        print('Cannot open GVFS mount list:', error, file=sys.stderr)
+        return '' if folder else []
+
+    Gtk, GLib = GTK_NATIVE_API
+    done = threading.Event()
+    result = ['' if folder else []]
+
+    def show_dialog():
+        try:
+            application = Gtk.Application.get_default()
+            parent = application.get_active_window() if application else None
+            dialog = Gtk.FileChooserDialog(
+                title='Choose mounted network folder' if folder else 'Choose network audio files',
+                transient_for=parent,
+                action=Gtk.FileChooserAction.SELECT_FOLDER if folder else Gtk.FileChooserAction.OPEN,
+            )
+            dialog.add_buttons('_Cancel', Gtk.ResponseType.CANCEL,
+                               '_Select', Gtk.ResponseType.ACCEPT)
+            dialog.set_modal(True)
+            dialog.set_local_only(True)
+            if not folder:
+                dialog.set_select_multiple(True)
+            dialog.add_shortcut_folder(gvfs)
+            dialog.set_current_folder(gvfs)
+
+            def on_response(chooser, response):
+                try:
+                    if response == Gtk.ResponseType.ACCEPT:
+                        result[0] = (chooser.get_filename() or '') if folder else list(chooser.get_filenames())
+                finally:
+                    chooser.destroy()
+                    done.set()
+
+            dialog.connect('response', on_response)
+            dialog.show()
+        except Exception as error:
+            print('GVFS chooser failed:', error, file=sys.stderr)
+            done.set()
+        return False
+
+    GLib.idle_add(show_dialog)
+    done.wait()
+    return result[0]
+
+
+def snap_pick_files_native():
+    """Select one or more audio files through GTK's native host portal."""
+    if GTK_NATIVE_API is None:
+        return None
+    Gtk, GLib = GTK_NATIVE_API
+    done = threading.Event()
+    paths = [None]
+
+    def show_dialog():
+        try:
+            application = Gtk.Application.get_default()
+            parent = application.get_active_window() if application else None
+            dialog = Gtk.FileChooserNative.new(
+                'Choose audio files', parent, Gtk.FileChooserAction.OPEN,
+                'Select', 'Cancel'
+            )
+            dialog.set_modal(True)
+            dialog.set_select_multiple(True)
+
+            def on_response(chooser, response):
+                try:
+                    paths[0] = list(chooser.get_filenames()) if response == Gtk.ResponseType.ACCEPT else []
+                finally:
+                    chooser.destroy()
+                    done.set()
+
+            dialog.connect('response', on_response)
+            dialog.show()
+        except Exception as error:
+            print('Native audio-file chooser failed:', error, file=sys.stderr)
+            done.set()
+        return False
+
+    GLib.idle_add(show_dialog)
+    done.wait()
+    return paths[0]
+
+
+def snap_pick_files():
+    paths = snap_pick_files_native()
+    if paths is None:
+        return []
+    if any(not selected_path_readable(path) for path in paths):
+        print('Portal audio path unreadable; reopening mounted network shares', file=sys.stderr)
+        paths = snap_gvfs_fallback(folder=False)
+    return [path for path in paths if selected_path_readable(path)]
+
+
 def pick_folder():
     """Select a music folder, using the host portal for strictly confined Snaps."""
     if os.environ.get('SNAP'):
         selected = snap_pick_folder_native()
         if selected is not None:
-            return selected
+            if selected and not selected_path_readable(selected, folder=True):
+                print('Portal folder unreadable; reopening mounted network shares', file=sys.stderr)
+                selected = snap_gvfs_fallback(folder=True)
+            return selected if selected_path_readable(selected, folder=True) else ''
     zenity = shutil.which('zenity')
     if zenity:
         p = subprocess.run([zenity, '--file-selection', '--directory', '--title=Choose music folder'],
@@ -153,6 +282,34 @@ def scan_added(root):
     if root not in ROOTS: ROOTS.append(root)
     return [{'id': i, 'name': os.path.basename(path), 'rel': os.path.relpath(path, root).replace(os.sep, '/'), 'size': os.path.getsize(path)}
             for i, (_, path) in enumerate(FILES[start:], start)]
+
+def scan_selected_files(paths):
+    """Append user-selected native files using the same server-track format."""
+    found = []
+    for path in paths:
+        path = os.path.abspath(os.path.expanduser(path))
+        if os.path.splitext(path)[1].lower() not in EXTS:
+            continue
+        try:
+            with open(path, 'rb') as music:
+                music.read(1)
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        found.append((os.path.dirname(path), path, size))
+    found.sort(key=lambda entry: [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r'(\d+)', entry[1])
+    ])
+    start = len(FILES)
+    for root, path, _size in found:
+        FILES.append((root, path))
+        if root not in ROOTS:
+            ROOTS.append(root)
+    return [{'id': start + i, 'name': os.path.basename(path),
+             'rel': os.path.basename(path), 'size': size}
+            for i, (root, path, size) in enumerate(found)]
+
 
 class H(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -206,7 +363,13 @@ class H(BaseHTTPRequestHandler):
         if u.path == '/api/library':
             with FILE_LOCK:
                 tr = [{'id': i, 'name': os.path.basename(p), 'rel': os.path.relpath(p, root).replace(os.sep, '/'), 'size': os.path.getsize(p)} for i, (root, p) in enumerate(FILES)]
-            return self._send(200, json.dumps({'root': ', '.join(os.path.basename(r) or r for r in ROOTS), 'tracks': tr}).encode(), 'application/json')
+            return self._send(200, json.dumps({'root': ', '.join(os.path.basename(r) or r for r in ROOTS), 'tracks': tr, 'snap': bool(os.environ.get('SNAP'))}).encode(), 'application/json')
+        if u.path == '/api/pick-files':
+            if not os.environ.get('SNAP'):
+                return self._send(404)
+            paths = snap_pick_files()
+            added = scan_selected_files(paths)
+            return self._send(200, json.dumps({'tracks': added}).encode(), 'application/json')
         if u.path == '/api/pick-folder':
             folder = pick_folder()
             if not folder:
