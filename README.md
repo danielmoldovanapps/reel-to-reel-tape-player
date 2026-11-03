@@ -52,16 +52,29 @@ python3 build.py --output dist
 sudo apt install ./dist/reelplayer_1.3.0_all.deb
 ```
 
-### Snap
+### Snap Store (official stable release)
+
+Version **1.3.0** is available in the [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) for Linux **amd64** systems with Snap support:
 
 ```bash
-snapcraft pack
+sudo snap install reel-to-reel-tape-player
 ```
 
-The Snap recipe uses `core24`, the GNOME extension, and system-provided Python
-from the base. It includes the fixes used during the desktop testing of the
-first Store submission. A build and desktop test are still required whenever
-the source or packaging changes. Publication is controlled by the project owner.
+Run it from the desktop application menu or with:
+
+```bash
+snap run reel-to-reel-tape-player.reelplayer
+```
+
+For media stored on removable drives, connect the optional interface:
+
+```bash
+sudo snap connect reel-to-reel-tape-player:removable-media
+```
+
+The published `latest/stable` package is **1.3.0, revision 1**, approved for its session D-Bus name `org.reelplayer.ReelPlayer`, which supports GTK single-instance and file-manager integration. The Snap uses strict confinement.
+
+To build locally from source instead, use `snapcraft pack`. The recipe uses `core24` and the GNOME extension. Changes to code or packaging need new builds and testing; upstream publication is controlled by the project owner.
 
 ### AppImage
 
@@ -91,7 +104,7 @@ for the affected areas and packaging/submission considerations.
 
 ## Support and donations
 
-Report reproducible bugs through this repository's Issues after it is published.
+Report reproducible bugs through this repository's [Issues](https://github.com/danielmoldovanapps/reel-to-reel-tape-player/issues).
 Contact: rodanielapps@yahoo.com
 
 If you like the app, please consider donating to the developer:
