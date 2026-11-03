@@ -76,7 +76,7 @@ class NativeChooserTests(TestCase):
              patch('shutil.which', return_value='/usr/bin/zenity'), \
              patch('subprocess.run') as run:
             run.return_value.returncode = 0
-            run.return_value.stdout = '/home/test/Music\\n'
+            run.return_value.stdout = '/home/test/Music\n'
             self.assertEqual(PICK_FOLDER(), '/home/test/Music')
             self.assertEqual(run.call_args.args[0],
                              ['/usr/bin/zenity', '--file-selection', '--directory',
@@ -85,7 +85,7 @@ class NativeChooserTests(TestCase):
     def test_about_version_matches_snapcraft(self):
         html = (ROOT / 'index.html').read_text()
         snapcraft = (ROOT / 'snap' / 'snapcraft.yaml').read_text()
-        match = re.search(r"^version:\\s*'([^']+)'", snapcraft, flags=re.M)
+        match = re.search(r"^version:\s*'([^']+)'", snapcraft, flags=re.M)
         self.assertIsNotNone(match)
         self.assertIn(f'id="appVersion"', html)
         self.assertIn(f'Version {match.group(1)}</p>', html)
