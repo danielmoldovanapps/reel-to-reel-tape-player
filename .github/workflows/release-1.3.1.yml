@@ -45,6 +45,8 @@ jobs:
               p.write_text(script)
               subprocess.run(['node','--check',str(p)],check=True)
           PY
+      - name: Test native Snap folder chooser and version label
+        run: python3 -m unittest discover -s tests -p 'test_snap_native_chooser.py' -v
       - name: Build Debian installer and lightweight AppImage
         run: |
           python3 build.py --output dist

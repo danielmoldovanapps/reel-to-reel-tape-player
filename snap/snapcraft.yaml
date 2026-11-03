@@ -48,6 +48,8 @@ parts:
       set -eu
       export PATH="$SNAP/usr/bin:$PATH"
       export GIO_USE_PROXY_RESOLVER=dummy
+      # Force GTK 3 to use the host desktop portal for native file pickers.
+      export GTK_USE_PORTAL=1
       export LD_LIBRARY_PATH="$SNAP/usr/lib/x86_64-linux-gnu/blas:$SNAP/usr/lib/x86_64-linux-gnu/lapack${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
       export GI_TYPELIB_PATH="$SNAP/usr/lib/x86_64-linux-gnu/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
