@@ -6,7 +6,7 @@ deck and reel branding.
 
 Supports music from your computer and accessible mounted network locations.
 Tape-style transport changes both speed and pitch during braking, starting,
-and winding. The current source version is **1.3.3** (Snap Store compatibility candidate; stable remains 1.3.2).
+and winding. The current source version is **1.3.3**, published to Snap Store stable as revision **4**.
 
 Proudly made by Daniel Moldovan, aka [RO]Daniel, from Brasov-Romania.
 
@@ -28,12 +28,14 @@ Web Audio, with GStreamer providing WebKit's audio decoding. A token-protected
 HTTP backend listens on a random localhost port. Python and WebKitGTK are
 required; this is not a native Cairo/GStreamer interface rewrite.
 
-## What's new in 1.3.1
+## What's new in 1.3.3
 
-- Smoother, clearer analogue VU needle motion with reduced double-needle appearance.
-- Improved needle response damping and envelope smoothing, tuned through hands-on desktop testing.
+- Added a network-folder and network-file access fallback for Snaps on Ubuntu when the desktop portal supplies unreadable document paths. The Ubuntu Live case still needs real-system retesting.
+- Keeps the analogue VU meter **LEVEL** labels and smooth needle response.
+- Shows **Version 1.3.3** in About.
+- Preserves the native folder chooser for non-Snap packages.
 
-The Snap Store currently distributes **1.3.0**; its stable channel will be updated separately after the 1.3.1 Snap has been built and verified.
+The official [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) stable channel now distributes **1.3.3, revision 4**.
 
 ## Features
 
@@ -56,12 +58,12 @@ Spotify/Deezer streaming-service client.
 
 ```bash
 python3 build.py --output dist
-sudo apt install ./dist/reelplayer_1.3.1_all.deb
+sudo apt install ./dist/reelplayer_1.3.3_all.deb
 ```
 
 ### Snap Store (official stable release)
 
-Version **1.3.0** is available in the [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) for Linux **amd64** systems with Snap support:
+Version **1.3.3** is available in the [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) for Linux **amd64** systems with Snap support:
 
 ```bash
 sudo snap install reel-to-reel-tape-player
@@ -79,7 +81,7 @@ For media stored on removable drives, connect the optional interface:
 sudo snap connect reel-to-reel-tape-player:removable-media
 ```
 
-The published `latest/stable` package is **1.3.0, revision 1**, approved for its session D-Bus name `org.reelplayer.ReelPlayer`, which supports GTK single-instance and file-manager integration. The Snap uses strict confinement.
+The published `latest/stable` package is **1.3.3, revision 4**, approved for its session D-Bus name `org.reelplayer.ReelPlayer`, which supports GTK single-instance and file-manager integration. The Snap uses strict confinement.
 
 To build locally from source instead, use `snapcraft pack`. The recipe uses `core24` and the GNOME extension. Changes to code or packaging need new builds and testing; upstream publication is controlled by the project owner.
 
@@ -89,9 +91,22 @@ To build locally from source instead, use `snapcraft pack`. The recipe uses `cor
 python3 build-appimage.py --output dist
 ```
 
-This lightweight AppImage uses **host Python/GTK/WebKitGTK dependencies** and is
-not a dependency-free portable installer. Do not advertise it as working on
-all distributions without prerequisites.
+The lightweight x86_64 AppImage uses **host Python/GTK/WebKitGTK dependencies**.
+It requires system WebKitGTK 4.1 and suitable codecs; it is **not** a dependency-free
+portable installer. Its file name is
+`Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage`.
+
+### Fedora-oriented RPM
+
+```bash
+python3 build-rpm.py --output dist
+sudo dnf install ./dist/reelplayer-1.3.3-1.noarch.rpm
+```
+
+Building the RPM requires `rpmbuild`. The `noarch` RPM contains the application
+code and relies on Fedora's host Python, GTK3, WebKitGTK 4.1 and GStreamer.
+Other RPM distributions, including openSUSE, may use different package names;
+compatibility has not been established. See [1.3.3 release notes](RELEASE-NOTES-1.3.3.md).
 
 ### Flatpak
 

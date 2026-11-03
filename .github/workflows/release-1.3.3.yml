@@ -1,0 +1,133 @@
+name: Release 1.3.3 Linux downloads
+
+on:
+  pull_request:
+    paths:
+      - 'build.py'
+      - 'build-appimage.py'
+      - 'build-rpm.py'
+      - 'build-support/appimage_runner.c'
+      - '.github/workflows/release-1.3.3.yml'
+      - 'RELEASE-NOTES-1.3.3.md'
+      - 'README.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-1.3.3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-1.3.3-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-release:
+    if: github.repository == 'danielmoldovanapps/reel-to-reel-tape-player'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out 1.3.3 release candidate
+        uses: actions/checkout@v4
+
+      - name: Install RPM and Debian build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc dpkg-dev rpm cpio
+
+      - name: Verify final source and version numbers
+        run: |
+          grep -Fq "version: '1.3.3'" snap/snapcraft.yaml
+          grep -Fq "Version: 1.3.3" build.py
+          grep -Fq "reelplayer_1.3.3_all.deb" build.py
+          grep -Fq "Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage" build-appimage.py
+          grep -Fq "Reel-to-Reel Tape Player 1.3.3 (extract-and-run runtime)" build-support/appimage_runner.c
+          grep -Fq "Version 1.3.3</p>" index.html
+          grep -Fq "txt(c,'LEVEL',fx+fw-14" index.html
+          grep -Fq "'PEAK LEVEL · dB'" index.html
+          grep -Fq "const w0=8, zeta=.86" index.html
+          grep -Fq "const tau=tgt2[i]>vuSignal[i] ? .036 : .14" index.html
+          grep -Fq "def snap_gvfs_fallback(" reelplayer
+          grep -Fq "def snap_pick_files(" reelplayer
+          if grep -Fq "txt(c,'PEAK',fx+fw-14" index.html; then
+            echo 'The analogue needle still has the old PEAK label' >&2
+            exit 1
+          fi
+
+      - name: Validate Python and JavaScript syntax
+        run: |
+          python3 -m py_compile reelplayer artwork.py streaminfo.py build.py build-appimage.py build-rpm.py
+          node --check tape-engine.js
+          python3 - <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          html = Path('index.html').read_text()
+          for index, script in enumerate(re.findall(r'<script[^>]*>(.*?)</script>', html, re.S)):
+              temp = Path('/tmp/reel-inline-%d.js' % index)
+              temp.write_text(script)
+              subprocess.run(['node', '--check', str(temp)], check=True)
+          PY
+
+      - name: Run network selection regressions
+        run: python3 -m unittest discover -s tests -p 'test_snap_native_chooser.py' -v
+
+      - name: Build Debian, AppImage and Fedora RPM
+        run: |
+          python3 build.py --output dist
+          python3 build-appimage.py --output dist
+          python3 build-rpm.py --output dist
+
+      - name: Check Debian metadata and bundled code
+        run: |
+          test "$(dpkg-deb -f dist/reelplayer_1.3.3_all.deb Version)" = "1.3.3"
+          mkdir -p extracted-deb
+          dpkg-deb -x dist/reelplayer_1.3.3_all.deb extracted-deb
+          cmp index.html extracted-deb/usr/share/reelplayer/index.html
+          cmp reelplayer extracted-deb/usr/share/reelplayer/reelplayer
+          test -x extracted-deb/usr/share/reelplayer/AppRun
+
+      - name: Check AppImage runtime and bundled code
+        run: |
+          (cd dist && ./Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage --appimage-extract)
+          mkdir -p extracted-appimage
+          tar -xzf dist/squashfs-root/payload.tar.gz -C extracted-appimage
+          cmp index.html extracted-appimage/app/index.html
+          cmp reelplayer extracted-appimage/app/reelplayer
+          test "$(dist/Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage --appimage-version)" = "Reel-to-Reel Tape Player 1.3.3 (extract-and-run runtime)"
+
+      - name: Check RPM dependencies and bundled code
+        run: |
+          test "$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}-%{ARCH}' dist/reelplayer-1.3.3-1.noarch.rpm)" = "1.3.3-1-noarch"
+          rpm -qp --requires dist/reelplayer-1.3.3-1.noarch.rpm | grep -Fq webkit2gtk4.1
+          mkdir -p extracted-rpm
+          (cd extracted-rpm && rpm2cpio ../dist/reelplayer-1.3.3-1.noarch.rpm | cpio -idmu --quiet)
+          cmp index.html extracted-rpm/usr/share/reelplayer/index.html
+          cmp reelplayer extracted-rpm/usr/share/reelplayer/reelplayer
+          test -x extracted-rpm/usr/share/reelplayer/AppRun
+
+      - name: Create SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum reelplayer_1.3.3_all.deb \
+            Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage \
+            reelplayer-1.3.3-1.noarch.rpm > SHA256SUMS
+
+      - name: Publish GitHub Release v1.3.3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.3.3 >/dev/null 2>&1; then
+            echo 'GitHub release v1.3.3 already exists; refusing to replace its assets.' >&2
+            exit 1
+          fi
+          gh release create v1.3.3 \
+            dist/reelplayer_1.3.3_all.deb \
+            dist/Reel-to-Reel-Tape-Player-1.3.3-WebKitGTK-x86_64.AppImage \
+            dist/reelplayer-1.3.3-1.noarch.rpm \
+            dist/SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title 'Reel-to-Reel Tape Player 1.3.3' \
+            --notes-file RELEASE-NOTES-1.3.3.md \
+            --latest
