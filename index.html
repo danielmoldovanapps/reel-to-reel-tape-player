@@ -1968,9 +1968,9 @@ function frame(now){
   }
   // A gentle attack/release envelope rejects frame-to-frame peak jitter;
   // the slightly more damped movement resembles an analogue VU needle.
-  const w0=16, zeta=.86; let moving=false;
+  const w0=8, zeta=.86; let moving=false;
   S.needle.forEach((n,i)=>{
-    const tau=tgt2[i]>vuSignal[i] ? .018 : .07;
+    const tau=tgt2[i]>vuSignal[i] ? .036 : .14;
     vuSignal[i]+=(tgt2[i]-vuSignal[i])*(1-Math.exp(-dt/tau));
     const sub=4, h=dt/sub;
     for(let s=0;s<sub;s++){
