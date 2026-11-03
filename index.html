@@ -1718,9 +1718,9 @@ function drawNeedleMeter(c,m,i,t){
   const g=meterGeom(m), {fx,fy,fw,fh,px,py}=g;
   const x=clamp(S.needle[i].x,-.02,1.06), a=-VU_A+x*2*VU_A, L=MET.Rs+10;
   c.save();rr(c,fx,fy,fw,fh,5);c.clip();
-  // shadow, needle
+  // Draw one crisp needle. A separate offset shadow used to resemble a
+  // second needle while moving, especially on lower-refresh displays.
   c.lineCap='round';
-  c.strokeStyle='rgba(60,35,5,.28)';c.lineWidth=2.4;c.beginPath();c.moveTo(px+3,py+3.5);c.lineTo(px+3+L*Math.sin(a),py+3.5-L*Math.cos(a));c.stroke();
   c.strokeStyle='#0c0a07';c.lineWidth=1.7;c.beginPath();c.moveTo(px,py);c.lineTo(px+L*Math.sin(a),py-L*Math.cos(a));c.stroke();
   // red lamp: lit only while the needle is actually in the red zone (above 0 VU)
   const lx=fx+fw-18, ly=fy+17, lit=S.needle[i].x>=vuFrac(0);
@@ -1895,6 +1895,8 @@ function packRadii(){
   return {tgt,p};
 }
 let lastT=performance.now(), smoothDt=1/60, tapeRollAng=0, capAng=0, pinchAng=0;
+// Smooth analyser peaks independently of the mechanical needle simulation.
+const vuSignal=[0,0];
 function frame(now){
   requestAnimationFrame(frame);
   let dt=Math.min(.05,(now-lastT)/1000); lastT=now;
@@ -1964,13 +1966,17 @@ function frame(now){
       tgt2[i]=pk/1.4125; pkDb[i]=20*Math.log10(Math.max(pk,1e-5));
     });
   }
-  const w0=17, zeta=.82; let moving=false;
+  // A gentle attack/release envelope rejects frame-to-frame peak jitter;
+  // the slightly more damped movement resembles an analogue VU needle.
+  const w0=12, zeta=.92; let moving=false;
   S.needle.forEach((n,i)=>{
+    const tau=tgt2[i]>vuSignal[i] ? .035 : .12;
+    vuSignal[i]+=(tgt2[i]-vuSignal[i])*(1-Math.exp(-dt/tau));
     const sub=4, h=dt/sub;
     for(let s=0;s<sub;s++){
-      const acc=w0*w0*(tgt2[i]-n.x)-2*zeta*w0*n.v; n.v+=acc*h; n.x+=n.v*h;
+      const acc=w0*w0*(vuSignal[i]-n.x)-2*zeta*w0*n.v; n.v+=acc*h; n.x+=n.v*h;
     }
-    if(Math.abs(n.v)>.002||Math.abs(n.x-tgt2[i])>.002) moving=true;
+    if(Math.abs(n.v)>.002||Math.abs(n.x-vuSignal[i])>.002) moving=true;
   });
   S.led.forEach((L,i)=>{
     const p=pkDb[i];
