@@ -25,6 +25,9 @@ PENDING_OPEN_EVENTS = []
 # native WebKitGTK JavaScript invocation (with a user activation context).
 NATIVE_PLAY_READY = set()
 NATIVE_PLAY_DISPATCH = None
+# Assigned after GTK initializes. The HTTP handler must schedule GTK work on
+# the main thread instead of calling GTK directly from its worker thread.
+GTK_NATIVE_API = None
 
 # A fixed allowlisted external destination; never accept an arbitrary URL from
 # HTTP requests. The authentication token is randomized per player launch.
@@ -63,8 +66,57 @@ def scan(paths):
     nat = lambda t: [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)', t[1])]
     FILES.sort(key=nat)
 
+def snap_pick_folder_native():
+    """Use GTK's host file-chooser portal for network folders in strict Snaps.
+
+    /api/pick-folder is served by a background HTTP thread. GTK objects must
+    be created and used by the GTK main loop, so marshal the dialog there.
+    Return None only if the native chooser couldn't be started, allowing a
+    fallback. Return '' for a user cancellation (do not reopen another dialog).
+    """
+    if GTK_NATIVE_API is None:
+        return None
+    Gtk, GLib = GTK_NATIVE_API
+    completed = threading.Event()
+    selected = [None]
+
+    def open_on_gtk_thread():
+        try:
+            app = Gtk.Application.get_default()
+            parent = app.get_active_window() if app else None
+            dialog = Gtk.FileChooserNative.new(
+                'Choose music folder', parent,
+                Gtk.FileChooserAction.SELECT_FOLDER, 'Select', 'Cancel'
+            )
+            dialog.set_modal(True)
+
+            def on_response(chooser, response):
+                try:
+                    selected[0] = (chooser.get_filename() or '') if response == Gtk.ResponseType.ACCEPT else ''
+                except Exception as error:
+                    print('Native folder chooser selection failed:', error, file=sys.stderr)
+                finally:
+                    chooser.destroy()
+                    completed.set()
+
+            dialog.connect('response', on_response)
+            dialog.show()
+        except Exception as error:
+            print('Native folder chooser failed:', error, file=sys.stderr)
+            completed.set()
+        return False
+
+    GLib.idle_add(open_on_gtk_thread)
+    completed.wait()
+    return selected[0]
+
+
 def pick_folder():
-    """Open a native desktop folder dialog; no browser file-upload flow."""
+    """Select a music folder, using the host portal for strictly confined Snaps."""
+    if os.environ.get('SNAP'):
+        selected = snap_pick_folder_native()
+        if selected is not None:
+            return selected
     zenity = shutil.which('zenity')
     if zenity:
         p = subprocess.run([zenity, '--file-selection', '--directory', '--title=Choose music folder'],
@@ -502,6 +554,9 @@ def main():
         show_launch_error('WebKitGTK dependencies are missing. Install python3-gi, '
                           'gir1.2-gtk-3.0 and gir1.2-webkit2-4.1.\n' + str(error))
         return 1
+
+    global GTK_NATIVE_API
+    GTK_NATIVE_API = (Gtk, GLib)
 
     class ReelApplication(Gtk.Application):
         def __init__(self):
