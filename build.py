@@ -28,7 +28,7 @@ shutil.copy2(ROOT/'debian/copyright',license_dest)
 debian=root/'DEBIAN';debian.mkdir();debian.chmod(0o755)
 installed=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())//1024+1
 (debian/'control').write_text(f'''Package: reelplayer
-Version: 1.3.0
+Version: 1.3.1
 Section: sound
 Priority: optional
 Architecture: all
@@ -44,6 +44,6 @@ Description: Reel-to-Reel Tape Player
 ''')
 for name in ('postinst','postrm'):
     f=debian/name;f.write_text('#!/bin/sh\nset -e\nif command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi\nexit 0\n');f.chmod(0o755)
-file=out/'reelplayer_1.3.0_all.deb'
+file=out/'reelplayer_1.3.1_all.deb'
 subprocess.run(['dpkg-deb','--root-owner-group','--build',str(root),str(file)],check=True)
 print(file)
