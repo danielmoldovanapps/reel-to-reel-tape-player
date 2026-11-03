@@ -1,13 +1,8 @@
 name: Release 1.3.1 Linux downloads
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'snap/snapcraft.yaml'
-      - 'build.py'
-      - 'build-appimage.py'
-      - '.github/workflows/release-1.3.1.yml'
+  # Historical 1.3.1 GitHub release: do not run on new Snap-only builds.
+  # The 1.3.2 GitHub assets will be packaged in a separate release step.
   workflow_dispatch:
 
 permissions:
