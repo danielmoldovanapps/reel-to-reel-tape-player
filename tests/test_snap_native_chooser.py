@@ -89,6 +89,11 @@ class NativeChooserTests(TestCase):
         self.assertIsNotNone(match)
         self.assertIn(f'id="appVersion"', html)
         self.assertIn(f'Version {match.group(1)}</p>', html)
+        # Analogue needles indicate a smoothed level, not instantaneous peak.
+        self.assertIn("txt(c,'LEVEL',fx+fw-14", html)
+        self.assertNotIn("txt(c,'PEAK',fx+fw-14", html)
+        # The independent LED meter remains a peak-level display.
+        self.assertIn("'PEAK LEVEL · dB'", html)
         self.assertIn('export GTK_USE_PORTAL=1', snapcraft)
 
 

@@ -6,7 +6,7 @@ deck and reel branding.
 
 Supports music from your computer and accessible mounted network locations.
 Tape-style transport changes both speed and pitch during braking, starting,
-and winding. The current source version is **1.3.1**.
+and winding. The current source version is **1.3.2** (Snap Store release candidate).
 
 Proudly made by Daniel Moldovan, aka [RO]Daniel, from Brasov-Romania.
 
