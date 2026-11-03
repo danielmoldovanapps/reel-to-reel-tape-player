@@ -1,7 +1,7 @@
 name: reel-to-reel-tape-player
 title: Reel-to-Reel Tape Player
 base: core24
-version: '1.3.1'
+version: '1.3.2'
 summary: Vintage reel-to-reel music player with animated reels and VU meters
 description: |
   A vintage-inspired reel-to-reel music player for Linux, supporting music
