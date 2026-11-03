@@ -63,7 +63,7 @@ def scan(paths):
     nat = lambda t: [int(x) if x.isdigit() else x.lower() for x in re.split(r'(\d+)', t[1])]
     FILES.sort(key=nat)
 
-def snap_gvfs_initial_folder():
+def snap_gvfs_initial_folder(gvfs_root=None):
     """Start Snap's GTK chooser in a readable GVFS share when one exists.
 
     GTK's Network browser can fail under strict confinement even though the
@@ -72,7 +72,9 @@ def snap_gvfs_initial_folder():
     """
     if not os.environ.get('SNAP'):
         return ''
-    gvfs = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/run/user/%d' % os.getuid()), 'gvfs')
+    # Snap rewrites XDG_RUNTIME_DIR to /run/user/UID/snap.APP, while GVFS
+    # FUSE mounts remain at the user's original /run/user/UID/gvfs.
+    gvfs = gvfs_root if gvfs_root is not None else '/run/user/%d/gvfs' % os.getuid()
     try:
         shares = [os.path.join(gvfs, entry) for entry in os.listdir(gvfs)
                   if os.path.isdir(os.path.join(gvfs, entry))]
