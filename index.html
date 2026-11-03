@@ -685,7 +685,7 @@ function drawMeterFace(c,x,y,ch){
   });
   txt(c,'VU',px,fy+fh-40,`700 26px ${SANS}`,'#1b1308','center',2);
   txt(c,ch==='L'?'LEFT':'RIGHT',fx+14,fy+fh-9,`700 8px ${SANS}`,'#3a2a12','left',2);
-  txt(c,'PEAK',fx+fw-14,fy+fh-9,`700 7px ${SANS}`,'#3a2a12','right',1.5);
+  txt(c,'LEVEL',fx+fw-14,fy+fh-9,`700 7px ${SANS}`,'#3a2a12','right',1.5);
   txt(c,'dB',fx+fw-14,fy+fh-22,`italic 9px ${SERIF}`,'#3a2a12','right',0);
   c.restore();
 }
