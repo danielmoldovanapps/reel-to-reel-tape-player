@@ -83,7 +83,7 @@ int main(int argc,char**argv){
  int fd=open(self,O_RDONLY);if(fd<0)fail("could not open launcher");
  int off=append_image_offset(fd);
  if(argc>1 && !strcmp(argv[1],"--appimage-offset")){printf("%d\n",off);return 0;}
- if(argc>1 && !strcmp(argv[1],"--appimage-version")){puts("Reel-to-Reel Tape Player 1.3.0 (extract-and-run runtime)");return 0;}
+ if(argc>1 && !strcmp(argv[1],"--appimage-version")){puts("Reel-to-Reel Tape Player 1.3.1 (extract-and-run runtime)");return 0;}
  int do_extract=(argc>1 && !strcmp(argv[1],"--appimage-extract"));
  char dir[PATH_MAX];
  if(do_extract){
