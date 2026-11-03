@@ -6,7 +6,7 @@ deck and reel branding.
 
 Supports music from your computer and accessible mounted network locations.
 Tape-style transport changes both speed and pitch during braking, starting,
-and winding. The current source version is **1.3.2** (Snap Store release candidate).
+and winding. The current source and Snap Store stable version is **1.3.2**.
 
 Proudly made by Daniel Moldovan, aka [RO]Daniel, from Brasov-Romania.
 
@@ -28,12 +28,14 @@ Web Audio, with GStreamer providing WebKit's audio decoding. A token-protected
 HTTP backend listens on a random localhost port. Python and WebKitGTK are
 required; this is not a native Cairo/GStreamer interface rewrite.
 
-## What's new in 1.3.1
+## What's new in 1.3.2
 
-- Smoother, clearer analogue VU needle motion with reduced double-needle appearance.
-- Improved needle response damping and envelope smoothing, tuned through hands-on desktop testing.
+- Analogue VU needle meters are labeled **LEVEL** rather than PEAK, matching their smooth mechanical response.
+- Snap network-folder browsing works through the GTK native desktop portal; the Debian/AppImage/RPM desktop chooser remains native.
+- The About dialog displays the app version.
+- Retains the improved needle damping and envelope smoothing introduced in 1.3.1.
 
-The Snap Store currently distributes **1.3.0**; its stable channel will be updated separately after the 1.3.1 Snap has been built and verified.
+**Snap Store stable:** version **1.3.2**, revision **3**, tested on Debian for network folders, music playback, playlist persistence and meter behavior.
 
 ## Features
 
@@ -56,12 +58,12 @@ Spotify/Deezer streaming-service client.
 
 ```bash
 python3 build.py --output dist
-sudo apt install ./dist/reelplayer_1.3.1_all.deb
+sudo apt install ./dist/reelplayer_1.3.2_all.deb
 ```
 
 ### Snap Store (official stable release)
 
-Version **1.3.0** is available in the [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) for Linux **amd64** systems with Snap support:
+Version **1.3.2** is available in the [Snap Store](https://snapcraft.io/reel-to-reel-tape-player) for Linux **amd64** systems with Snap support:
 
 ```bash
 sudo snap install reel-to-reel-tape-player
@@ -79,7 +81,7 @@ For media stored on removable drives, connect the optional interface:
 sudo snap connect reel-to-reel-tape-player:removable-media
 ```
 
-The published `latest/stable` package is **1.3.0, revision 1**, approved for its session D-Bus name `org.reelplayer.ReelPlayer`, which supports GTK single-instance and file-manager integration. The Snap uses strict confinement.
+The published `latest/stable` package is **1.3.2, revision 3**, approved for its session D-Bus name `org.reelplayer.ReelPlayer`, which supports GTK single-instance and file-manager integration. The Snap uses strict confinement.
 
 To build locally from source instead, use `snapcraft pack`. The recipe uses `core24` and the GNOME extension. Changes to code or packaging need new builds and testing; upstream publication is controlled by the project owner.
 
@@ -89,9 +91,23 @@ To build locally from source instead, use `snapcraft pack`. The recipe uses `cor
 python3 build-appimage.py --output dist
 ```
 
-This lightweight AppImage uses **host Python/GTK/WebKitGTK dependencies** and is
-not a dependency-free portable installer. Do not advertise it as working on
-all distributions without prerequisites.
+This lightweight x86_64 AppImage uses **host Python/GTK/WebKitGTK dependencies** and is
+not a dependency-free portable installer. It requires WebKitGTK 4.1 and compatible
+system codecs; do not advertise it as working on all distributions without prerequisites.
+The GitHub download is named `Reel-to-Reel-Tape-Player-1.3.2-WebKitGTK-x86_64.AppImage`.
+
+### Fedora-oriented RPM
+
+```bash
+python3 build-rpm.py --output dist
+sudo dnf install ./dist/reelplayer-1.3.2-1.noarch.rpm
+```
+
+Builds require `rpmbuild`. This **noarch RPM** contains architecture-independent
+application code and expects Fedora's system Python, GTK3, PyGObject and
+WebKitGTK 4.1 packages; audio codec availability varies. Other RPM distributions
+(such as openSUSE) have different runtime package names, so compatibility is
+not guaranteed. See [release notes](RELEASE-NOTES-1.3.2.md).
 
 ### Flatpak
 
