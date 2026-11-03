@@ -24,7 +24,7 @@ shutil.copy2(root/'build-support/AppRun',appdir/'AppRun');(appdir/'AppRun').chmo
 subprocess.run(['python3',str(root/'build-support/make_sqfs.py'),str(appdir),str(stage/'app.squashfs')],check=True)
 runtime=stage/'runtime'
 subprocess.run(['gcc','-Os',str(root/'build-support/appimage_runner.c'),'-o',str(runtime)],check=True)
-img=out/'Reel-to-Reel-Tape-Player-1.3.1-WebKitGTK-x86_64.AppImage'
+img=out/'Reel-to-Reel-Tape-Player-1.3.2-WebKitGTK-x86_64.AppImage'
 with img.open('wb') as dst:
     with runtime.open('rb') as f:shutil.copyfileobj(f,dst)
     padding=(-img.stat().st_size)%4096
