@@ -6,7 +6,7 @@ deck and reel branding.
 
 Supports music from your computer and accessible mounted network locations.
 Tape-style transport changes both speed and pitch during braking, starting,
-and winding. The current application version is **1.3.0**.
+and winding. The current source version is **1.3.1**.
 
 Proudly made by Daniel Moldovan, aka [RO]Daniel, from Brasov-Romania.
 
@@ -27,6 +27,13 @@ The interface runs in WebKitGTK inside a GTK3 desktop window. Playback uses
 Web Audio, with GStreamer providing WebKit's audio decoding. A token-protected
 HTTP backend listens on a random localhost port. Python and WebKitGTK are
 required; this is not a native Cairo/GStreamer interface rewrite.
+
+## What's new in 1.3.1
+
+- Smoother, clearer analogue VU needle motion with reduced double-needle appearance.
+- Improved needle response damping and envelope smoothing, tuned through hands-on desktop testing.
+
+The Snap Store currently distributes **1.3.0**; its stable channel will be updated separately after the 1.3.1 Snap has been built and verified.
 
 ## Features
 
@@ -49,7 +56,7 @@ Spotify/Deezer streaming-service client.
 
 ```bash
 python3 build.py --output dist
-sudo apt install ./dist/reelplayer_1.3.0_all.deb
+sudo apt install ./dist/reelplayer_1.3.1_all.deb
 ```
 
 ### Snap Store (official stable release)
