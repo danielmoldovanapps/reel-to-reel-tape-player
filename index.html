@@ -1528,7 +1528,25 @@ async function menuAction(a){
   menu.style.display='none';
   if(a==='legal'){showLegal();return}
   if(a==='branding'){openBranding();return}
-  if(a==='files') $('fileIn').click();
+  if(a==='files'){
+    if(S.server && S.server.snap){
+      try{
+        const r=await fetch('/api/pick-files?k='+encodeURIComponent(S.server.key));
+        if(!r.ok) throw new Error('Native audio-file chooser unavailable');
+        const j=await r.json();
+        if(j.tracks && j.tracks.length){
+          addServerTracks(j.tracks.map(t=>({...t,url:`/file/${t.id}?k=${encodeURIComponent(S.server.key)}`,
+            artUrl:`/art/${t.id}?k=${encodeURIComponent(S.server.key)}`,
+            infoUrl:`/info/${t.id}?k=${encodeURIComponent(S.server.key)}`})));
+          if(!S.libOpen) toggleLib(true);
+          poke(2500);
+        }
+      }catch(err){
+        console.error('Native audio-file chooser failed:',err);
+        S.label='COULD NOT OPEN AUDIO FILES';S.marquee=0;poke(3000);
+      }
+    }else $('fileIn').click();
+  }
   else if(a==='folder'){
     if(S.server && S.server.key){
       try{
@@ -1541,7 +1559,12 @@ async function menuAction(a){
           if(!S.libOpen) toggleLib(true);
           poke(2500);
         }
-      }catch(err){ $('dirIn').click(); }
+      }catch(err){
+        if(S.server.snap){
+          console.error('Native folder chooser failed:',err);
+          S.label='COULD NOT OPEN FOLDER';S.marquee=0;poke(3000);
+        }else $('dirIn').click();
+      }
     } else $('dirIn').click();
   } else if(a==='clear') clearLibrary();
 }
@@ -2196,7 +2219,7 @@ async function bootServer(){
   try{
     const r=await fetch('/api/library?k='+key); if(!r.ok) return;
     const j=await r.json();
-    S.server={root:j.root,key};
+    S.server={root:j.root,key,snap:!!j.snap};
     addServerTracks(j.tracks.map(t=>({...t,url:`/file/${t.id}?k=${key}`,artUrl:`/art/${t.id}?k=${key}`,infoUrl:`/info/${t.id}?k=${key}`})));
     if(tracks.length) toggleLib(true);
     // GTK uses a single D-Bus instance. Opening another file delivers it to
