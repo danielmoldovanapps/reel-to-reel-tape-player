@@ -1,0 +1,80 @@
+name: Release 1.3.1 Linux downloads
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'snap/snapcraft.yaml'
+      - 'build.py'
+      - 'build-appimage.py'
+      - '.github/workflows/release-1.3.1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    if: github.repository == 'danielmoldovanapps/reel-to-reel-tape-player'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged source candidate
+        uses: actions/checkout@v4
+      - name: Install packaging prerequisites
+        run: sudo apt-get update && sudo apt-get install -y gcc dpkg-dev
+      - name: Verify expected release version and needle settings
+        run: |
+          grep -Fq "version: '1.3.1'" snap/snapcraft.yaml
+          grep -Fq "Version: 1.3.1" build.py
+          grep -Fq "const w0=8, zeta=.86" index.html
+          grep -Fq "const tau=tgt2[i]>vuSignal[i] ? .036 : .14" index.html
+          if grep -Fq "c.moveTo(px+3,py+3.5)" index.html; then
+            echo 'Unexpected doubled-shadow needle code' >&2
+            exit 1
+          fi
+      - name: Validate Python and JavaScript source syntax
+        run: |
+          python3 -m py_compile reelplayer artwork.py streaminfo.py build.py build-appimage.py
+          node --check tape-engine.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+          html=Path('index.html').read_text()
+          for i,script in enumerate(re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>', html)):
+              p=Path('/tmp/reel-inline-%d.js'%i)
+              p.write_text(script)
+              subprocess.run(['node','--check',str(p)],check=True)
+          PY
+      - name: Build Debian installer and lightweight AppImage
+        run: |
+          python3 build.py --output dist
+          python3 build-appimage.py --output dist
+      - name: Verify packaged version and bundled app
+        run: |
+          test "$(dpkg-deb -f dist/reelplayer_1.3.1_all.deb Version)" = "1.3.1"
+          mkdir -p extracted-deb
+          dpkg-deb -x dist/reelplayer_1.3.1_all.deb extracted-deb
+          cmp index.html extracted-deb/usr/share/reelplayer/index.html
+          cd dist
+          ./Reel-to-Reel-Tape-Player-1.3.1-WebKitGTK-x86_64.AppImage --appimage-extract
+          cmp ../index.html squashfs-root/app/index.html || cmp ../index.html squashfs-root/usr/share/reelplayer/index.html
+      - name: Record checksums
+        run: |
+          cd dist
+          sha256sum reelplayer_1.3.1_all.deb Reel-to-Reel-Tape-Player-1.3.1-WebKitGTK-x86_64.AppImage > SHA256SUMS
+      - name: Publish GitHub release after successful package checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.3.1 >/dev/null 2>&1; then
+            echo 'v1.3.1 already exists; refusing to silently replace published assets.'
+            exit 0
+          fi
+          gh release create v1.3.1 \
+            dist/reelplayer_1.3.1_all.deb \
+            dist/Reel-to-Reel-Tape-Player-1.3.1-WebKitGTK-x86_64.AppImage \
+            dist/SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title 'Reel-to-Reel Tape Player 1.3.1' \
+            --notes 'Version 1.3.1 improves analogue VU needle movement: eliminates the extra offset shadow and uses gentler input and mechanical damping, tuned through manual testing on Debian. Includes a Debian/Ubuntu .deb and a lightweight AppImage (requires host GTK3, Python GI, and WebKitGTK; not fully self-contained). Packaged files passed automated structure and syntax checks, but desktop playback must be tested on the target distribution. The Snap Store stable channel remains at 1.3.0 until a separately built and reviewed Snap is published.' \
+            --latest
